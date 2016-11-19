@@ -23,7 +23,7 @@ DEPENDENCIES=$(SOURCES:.cpp=.d) $(CUDA_SOURCES:.cu=.d)
 all: compress
 
 compress: $(CUDA_OBJECTS) $(OBJECTS)
-	$(NVCC) -o $@ $^ $(NVCC_OPTS)
+	$(NVCC) -o $@ $^ $(NVCC_OPTS) -lboost_system -lboost_program_options
 
 %.cu.o: %.cu Makefile
 	$(NVCC) -o $(<:.cu=.d) $< $(NVCC_OPTS) -M &
