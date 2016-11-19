@@ -3,3 +3,5 @@
 *.swp
 *.un~
 cscope.*
+.ropeproject
+compress
