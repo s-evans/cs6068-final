@@ -1,3 +1,5 @@
+.SUFFIXES:
+
 NVCC=nvcc
 
 NVCC_OPTS=-O3 -arch=sm_20 -m64
