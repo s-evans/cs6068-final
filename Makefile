@@ -35,7 +35,7 @@ compress: $(CUDA_OBJECTS) $(OBJECTS)
 	$(NVCC) -o $@ $^ -L $(OPENCV_LIBPATH) $(OPENCV_LIBS) $(NVCC_OPTS)
 
 %.cu.o: %.cu Makefile
-	$(NVCC) -o $(<:.cu=.d) $< $(NVCC_OPTS) -M
+	$(NVCC) -o $(<:.cu=.d) $< $(NVCC_OPTS) -M &
 	$(NVCC) -o $@ -c $< $(NVCC_OPTS)
 
 %.o: %.cpp Makefile
