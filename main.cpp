@@ -19,34 +19,13 @@ typedef enum _options_status_t {
     OPTION_ERROR = 2
 } options_status_t;
 
-static options_status_t mutually_exclusive_required( boost::program_options::variables_map const& vm, std::string const& opt1, std::string const& opt2 )
-{
-    const unsigned int count1 = vm.count( opt1 );
-    const unsigned int count2 = vm.count( opt2 );
-
-    if ( ( count1 && count2 ) || !( count1 == 1 || count2 == 1 ) ) {
-        return OPTION_ERROR;
-    }
-
-    return count1 ? OPTION_1_SELECTED : OPTION_2_SELECTED;
-}
-
 int main( int argc, char** argv )
 {
     // Declare the supported options.
-    boost::program_options::options_description operations( "Operations" );
-    operations.add_options()
-    ( "encode,e", "perform encoding operation" )
-    ( "decode,d", "perform decoding operation" );
-
     boost::program_options::options_description implementations( "Implementation options" );
     implementations.add_options()
     ( "serial,s", "choose serial implementation" )
     ( "parallel,p", "choose parallel implementation" );
-
-    boost::program_options::options_description encodings( "Encoding options" );
-    encodings.add_options()
-    ( "huffman,f", "use huffman coding" );
 
     boost::program_options::options_description options( "Other options" );
     options.add_options()
@@ -62,7 +41,7 @@ int main( int argc, char** argv )
     ( "output-file,o", boost::program_options::value<boost::filesystem::path>( &output_file_path ), "path to output file" );
 
     boost::program_options::options_description desc( "Usage" );
-    desc.add( operations ).add( encodings ).add( implementations ).add( options ).add( input_output );
+    desc.add( implementations ).add( options ).add( input_output );
 
     boost::program_options::positional_options_description positional;
     positional.add( "input-file", 1 ).add( "output-file", 1 );
@@ -78,27 +57,6 @@ int main( int argc, char** argv )
     }
 
     unsigned int err = 0;
-    options_status_t encoding_option = mutually_exclusive_required( vm, "encode", "decode" );
-
-    if ( encoding_option == OPTION_ERROR ) {
-        std::cerr << "Please select one operation" << std::endl << std::endl;
-        std::cerr << operations << std::endl;
-        err = 1;
-    }
-
-    options_status_t implementation_option = mutually_exclusive_required( vm, "serial", "parallel" );
-
-    if ( implementation_option == OPTION_ERROR ) {
-        std::cerr << "Please select one implementation option" << std::endl << std::endl;
-        std::cerr << implementations << std::endl;
-        err = 1;
-    }
-
-    if ( !vm.count( "huffman" ) ) {
-        std::cerr << "Please specify an encoder" << std::endl << std::endl;
-        std::cerr << encodings << std::endl;
-        err = 1;
-    }
 
     if ( !( vm.count( "output-file" ) && vm.count( "input-file" ) ) ) {
         std::cerr << "Please specify an input / output file" << std::endl << std::endl;
@@ -159,40 +117,18 @@ int main( int argc, char** argv )
 
     GpuTimer timer;
 
-    if ( vm.count( "encode" ) ) {
-        if ( vm.count( "serial" ) ) {
-            timer.Start();
-            serial_huffman_encode(
-                    reinterpret_cast<unsigned char*>( input_file.data() ), input_file.size(),
-                    reinterpret_cast<unsigned char*>( output_file.data() ), output_file_size );
-            timer.Stop();
-        } else if ( vm.count( "parallel" ) ) {
-            timer.Start();
-            parallel_huffman_encode(
-                    reinterpret_cast<unsigned char*>( input_file.data() ), input_file.size(),
-                    reinterpret_cast<unsigned char*>( output_file.data() ), output_file_size );
-            timer.Stop();
-        } else {
-            assert( false );
-        }
-    } else if ( vm.count( "decode" ) ) {
-        if ( vm.count( "serial" ) ) {
-            timer.Start();
-            serial_huffman_decode( 
-                    reinterpret_cast<unsigned char*>( input_file.data() ), input_file.size(),
-                    reinterpret_cast<unsigned char*>( output_file.data() ), output_file_size );
-            timer.Stop();
-        } else if ( vm.count( "parallel" ) ) {
-            timer.Start();
-            parallel_huffman_decode(
-                    reinterpret_cast<unsigned char*>( input_file.data() ), input_file.size(),
-                    reinterpret_cast<unsigned char*>( output_file.data() ), output_file_size );
-            timer.Stop();
-        } else {
-            assert( false );
-        }
+    if ( vm.count( "serial" ) ) {
+        timer.Start();
+        serial_huffman_encode(
+                reinterpret_cast<unsigned char*>( input_file.data() ), input_file.size(),
+                reinterpret_cast<unsigned char*>( output_file.data() ), output_file_size );
+        timer.Stop();
     } else {
-        assert( false );
+        timer.Start();
+        parallel_huffman_encode(
+                reinterpret_cast<unsigned char*>( input_file.data() ), input_file.size(),
+                reinterpret_cast<unsigned char*>( output_file.data() ), output_file_size );
+        timer.Stop();
     }
 
     if ( vm.count( "timing" ) ) {

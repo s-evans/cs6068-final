@@ -130,8 +130,6 @@ void radix_sort(
 
         checkCudaErrors( cudaDeviceSynchronize() );
 
-        // TODO: restore
-
         move_values<<<grid_size, block_size, 0, stream>>>(
                 d_histogram,
                 d_relative_offset,

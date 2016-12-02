@@ -8,12 +8,3 @@ void serial_huffman_encode(
 {
     // TODO: implement
 }
-
-void serial_huffman_decode(
-        const unsigned char* const input_buffer,
-        unsigned int const& input_size,
-        unsigned char* const output_buffer,
-        unsigned int& output_size )
-{
-    // TODO: implement
-}

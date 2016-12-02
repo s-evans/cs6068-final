@@ -11,15 +11,6 @@
 
 const dim3 block_size( BLOCK_SIZE, 1, 1 );
 
-void parallel_huffman_decode(
-        const unsigned char* const h_input_buffer,
-        unsigned int const& input_size,
-        unsigned char* const h_output_buffer,
-        unsigned int& output_size )
-{
-    // TODO: implement
-}
-
 typedef struct _code_word_t {
     unsigned int code;
     unsigned int code_size;
