@@ -1,14 +1,17 @@
-#include <stdio.h>
-#include <string>
-#include <assert.h>
-#include "timer.h"
-#include "utils.h"
 #include "boost/filesystem.hpp"
-#include "boost/program_options.hpp"
 #include "boost/filesystem.hpp"
 #include "boost/iostreams/device/mapped_file.hpp"
-#include "serial_huffman.h"
+#include "boost/program_options.hpp"
 #include "parallel_huffman.h"
+#include "serial_huffman.h"
+#include "timer.h"
+#include "utils.h"
+#include <assert.h>
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <string>
+#include <sys/mman.h>
 
 typedef enum _options_status_t {
     OPTION_1_SELECTED = 0,
@@ -30,9 +33,6 @@ static options_status_t mutually_exclusive_required( boost::program_options::var
 
 int main( int argc, char** argv )
 {
-    // TODO: parse input command line arguments
-    // options for controlling buffer sizes
-
     // Declare the supported options.
     boost::program_options::options_description operations( "Operations" );
     operations.add_options()
@@ -93,8 +93,6 @@ int main( int argc, char** argv )
         std::cerr << implementations << std::endl;
         err = 1;
     }
-
-    // TODO: verify that at least one encoding step was chosen
 
     if ( !vm.count( "huffman" ) ) {
         std::cerr << "Please specify an encoder" << std::endl << std::endl;
@@ -159,19 +157,37 @@ int main( int argc, char** argv )
 
     unsigned int output_file_size = 0;
 
+    GpuTimer timer;
+
     if ( vm.count( "encode" ) ) {
         if ( vm.count( "serial" ) ) {
-            serial_huffman_encode( input_file.data(), input_file.size(), output_file.data(), output_file_size );
+            timer.Start();
+            serial_huffman_encode(
+                    reinterpret_cast<unsigned char*>( input_file.data() ), input_file.size(),
+                    reinterpret_cast<unsigned char*>( output_file.data() ), output_file_size );
+            timer.Stop();
         } else if ( vm.count( "parallel" ) ) {
-            parallel_huffman_encode( input_file.data(), input_file.size(), output_file.data(), output_file_size );
+            timer.Start();
+            parallel_huffman_encode(
+                    reinterpret_cast<unsigned char*>( input_file.data() ), input_file.size(),
+                    reinterpret_cast<unsigned char*>( output_file.data() ), output_file_size );
+            timer.Stop();
         } else {
             assert( false );
         }
     } else if ( vm.count( "decode" ) ) {
         if ( vm.count( "serial" ) ) {
-            serial_huffman_decode( input_file.data(), input_file.size(), output_file.data(), output_file_size );
+            timer.Start();
+            serial_huffman_decode( 
+                    reinterpret_cast<unsigned char*>( input_file.data() ), input_file.size(),
+                    reinterpret_cast<unsigned char*>( output_file.data() ), output_file_size );
+            timer.Stop();
         } else if ( vm.count( "parallel" ) ) {
-            parallel_huffman_decode( input_file.data(), input_file.size(), output_file.data(), output_file_size );
+            timer.Start();
+            parallel_huffman_decode(
+                    reinterpret_cast<unsigned char*>( input_file.data() ), input_file.size(),
+                    reinterpret_cast<unsigned char*>( output_file.data() ), output_file_size );
+            timer.Stop();
         } else {
             assert( false );
         }
@@ -179,20 +195,16 @@ int main( int argc, char** argv )
         assert( false );
     }
 
+    if ( vm.count( "timing" ) ) {
+        std::cerr << "Code ran in " << timer.Elapsed() << " msecs" << std::endl;
+    }
+
+    if ( msync( output_file.data(), output_file.size(), MS_SYNC ) ) {
+        std::cerr << "Failed to flush output data: " << strerror( errno ) << std::endl;
+    }
+
     output_file.close();
     input_file.close();
-
-    // TODO: pipelining
-    // do a compression pipeline sort of thing and make it accessible on the command line
-    // for example, apply various encoders in any order
-    // one encoder could record timing information for us and be a no-op
-
-    // TODO: implement tests
-
-    GpuTimer timer;
-    timer.Start();
-
-    timer.Stop();
 
     return err;
 }
