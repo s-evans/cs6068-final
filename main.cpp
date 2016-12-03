@@ -117,6 +117,8 @@ int main( int argc, char** argv )
 
     GpuTimer timer;
 
+    /* std::cerr << "input_file.size(): " << input_file.size() << std::endl; */
+
     if ( vm.count( "serial" ) ) {
         timer.Start();
         serial_huffman_encode(

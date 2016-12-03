@@ -5,6 +5,7 @@
 #include "relative_offsets.h"
 #include "scatter.h"
 #include "utils.h"
+#include "debug_print.h"
 
 // define value size and radix sort chunk size
 #define RADIX_SORT_TOTAL_BITS ( sizeof( unsigned int ) << 3 )
@@ -63,7 +64,12 @@ void make_relative_offsets(
     const unsigned int relative_offsets_size = blelloch_size( input_size );
     unsigned int row_offset = 0;
 
+    /* std::cerr << "relative_offsets_size: " << relative_offsets_size << std::endl; */
+
     for ( unsigned int value = 0 ; value < RADIX_SORT_NUM_VALS ; ++value ) {
+
+        /* std::cerr << "value: " << value << std::endl; */
+        /* std::cerr << "row_offset: " << row_offset << std::endl; */
 
         relative_offsets(
                 d_relative_offsets + row_offset,
@@ -73,6 +79,10 @@ void make_relative_offsets(
                 mask_offset,
                 mask,
                 streams[value] );
+
+        /* std::cerr << "d_relative_offsets" << std::endl; */
+        /* checkCudaErrors( cudaDeviceSynchronize() ); */
+        /* debug_print( d_relative_offsets + row_offset, relative_offsets_size ); */
 
         row_offset += relative_offsets_size;
     }
@@ -109,7 +119,15 @@ void radix_sort(
         checkCudaErrors( cudaStreamCreate( &streams[i] ) );
     }
 
+    /* std::cerr << "histogram_size: " << histogram_size << std::endl; */
+    /* std::cerr << "relative_offset_size: " << relative_offset_size << std::endl; */
+    /* std::cerr << "mask: " << mask << std::endl; */
+    /* std::cerr << "RADIX_SORT_TOTAL_BITS: " << RADIX_SORT_TOTAL_BITS << std::endl; */
+    /* std::cerr << "RADIX_SORT_NUM_BITS: " << RADIX_SORT_NUM_BITS << std::endl; */
+
     for ( unsigned int mask_offset = 0 ; mask_offset < RADIX_SORT_TOTAL_BITS ; mask_offset += RADIX_SORT_NUM_BITS ) {
+
+        /* std::cerr << "mask_offset: " << mask_offset << std::endl; */
 
         scatter(
                 d_histogram,
@@ -129,6 +147,9 @@ void radix_sort(
                 streams );
 
         checkCudaErrors( cudaDeviceSynchronize() );
+
+        /* std::cerr << "scatter" << std::endl; */
+        /* debug_print( d_histogram, histogram_size ); */
 
         move_values<<<grid_size, block_size, 0, stream>>>(
                 d_histogram,

@@ -15,6 +15,7 @@ SOURCES=main.cpp \
 CUDA_SOURCES=parallel_huffman.cu\
 			 histogram.cu\
 			 masked_histogram.cu\
+			 huffman_tree.cu\
 			 blelloch_scan.cu\
 			 scatter.cu\
 			 relative_offsets.cu\

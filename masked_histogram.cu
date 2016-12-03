@@ -1,7 +1,5 @@
 #include "masked_histogram.h"
 
-#define BLOCK_DIM 256
-
 __global__
 void masked_histogram_kernel(
         unsigned int* const histogram,
@@ -20,19 +18,18 @@ void masked_histogram_kernel(
     __syncthreads();
 
     // get the index this thread is responsible for
-    const unsigned int idx = threadIdx.x + ( blockIdx.x << 8 );
+    const unsigned int idx = threadIdx.x + blockIdx.x * blockDim.x;
 
     // validate against input size
-    if ( idx >= input_size ) {
-        __syncthreads();
-        return;
+    if ( idx < input_size ) {
+
+        // get the value / bin
+        const unsigned int val = ( input[idx] >> mask_offset ) & mask;
+
+        // do atomic increment of the bin in shared memory
+        atomicAdd( &shared_histogram[val], 1 );
+
     }
-
-    // get the value / bin
-    const unsigned int val = ( input[idx] >> mask_offset ) & mask;
-
-    // do atomic increment of the bin in shared memory
-    atomicAdd( &shared_histogram[val], 1 );
 
     // wait until shared memory is finished being used by all threads in the block
     __syncthreads();

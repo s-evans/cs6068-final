@@ -1,44 +1,35 @@
-#include "parallel_huffman.h"
 #include "blelloch_scan.h"
-#include "radix_sort.h"
-#include "histogram.h"
-#include "utils.h"
-#include "limits.h"
 #include "debug_print.h"
+#include "histogram.h"
+#include "huffman_tree.h"
+#include "limits.h"
+#include "parallel_huffman.h"
+#include "radix_sort.h"
+#include "utils.h"
 
 #define STREAM_COUNT 5
-#define BLOCK_SIZE 256 // number of elements per block
-
-const dim3 block_size( BLOCK_SIZE, 1, 1 );
 
 typedef struct _code_word_t {
     unsigned int code;
     unsigned int code_size;
 } code_word_t;
 
-static code_word_t tree[UCHAR_MAX] = {0};
+static code_word_t code_map[UCHAR_MAX] = {0};
 
 __global__ void init_positions(
-        unsigned int* const d_positions,
-        const unsigned int size )
+        unsigned int* const d_positions )
 {
     const unsigned int idx = threadIdx.x + blockDim.x * blockIdx.x;
-
-    if ( idx < size ) {
-        d_positions[idx] = idx;
-    }
+    d_positions[idx] = idx;
 }
 
 void parallel_huffman_encode(
         const unsigned char* const h_input_buffer,
-        unsigned int const& input_size,
+        unsigned int const input_size,
         unsigned char* const h_output_buffer,
         unsigned int& output_size )
 {
-    const dim3 grid_size( ( input_size + block_size.x - 1 ) / block_size.x, 1, 1 );
-    const unsigned int stream_size = input_size / STREAM_COUNT;
     cudaStream_t streams[STREAM_COUNT];
-    unsigned int j;
 
     for ( int i = 0 ; i < STREAM_COUNT ; ++i ) {
         checkCudaErrors( cudaStreamCreate( &streams[i] ) );
@@ -46,6 +37,7 @@ void parallel_huffman_encode(
 
     unsigned char* d_input;
     checkCudaErrors( cudaMalloc( &d_input, sizeof( *d_input ) * input_size ) );
+    checkCudaErrors( cudaHostRegister( static_cast<void*>( const_cast<unsigned char*>( h_input_buffer ) ), input_size, cudaHostRegisterMapped ) );
     checkCudaErrors( cudaMemcpyAsync( d_input, h_input_buffer, input_size, cudaMemcpyHostToDevice, streams[0] ) );
 
     unsigned char* d_output;
@@ -55,9 +47,9 @@ void parallel_huffman_encode(
     checkCudaErrors( cudaMalloc( &d_output_size, sizeof( *d_output_size ) ) );
     checkCudaErrors( cudaMemsetAsync( d_output_size, 0, sizeof( *d_output_size ), streams[1] ) );
 
-    code_word_t* d_tree;
-    const unsigned int tree_size = sizeof( tree );
-    checkCudaErrors( cudaMalloc( &d_tree, tree_size ) );
+    code_word_t* d_code_map;
+    const unsigned int code_map_size = sizeof( code_map );
+    checkCudaErrors( cudaMalloc( &d_code_map, code_map_size ) );
 
     unsigned int* d_histogram;
     const unsigned int histogram_count = 1 << ( sizeof( *d_input ) << 3 );
@@ -74,7 +66,7 @@ void parallel_huffman_encode(
 
     unsigned int* d_input_positions;
     checkCudaErrors( cudaMalloc( &d_input_positions, histogram_size ) );
-    init_positions<<<grid_size, block_size, 0, streams[3]>>>( d_input_positions, histogram_count );
+    init_positions<<<1, histogram_count, 0, streams[3]>>>( d_input_positions );
 
     unsigned int* d_output_positions;
     checkCudaErrors( cudaMalloc( &d_output_positions, histogram_size ) );
@@ -83,13 +75,17 @@ void parallel_huffman_encode(
     const unsigned int radix_blelloch_number = blelloch_size( RADIX_SORT_NUM_VALS );
     checkCudaErrors( cudaMalloc( &d_radix_histogram, radix_blelloch_number * sizeof( *d_radix_histogram ) ) );
 
-    checkCudaErrors( cudaHostRegister( static_cast<void*>( const_cast<unsigned char*>( h_input_buffer ) ), input_size, cudaHostRegisterMapped ) );
-
     checkCudaErrors( cudaStreamSynchronize( streams[0] ) );
 
-    histogram( d_histogram, histogram_count, d_input, input_size, streams[3] );
+    histogram( d_histogram, histogram_count, d_input, input_size, streams[2] );
 
     checkCudaErrors( cudaDeviceSynchronize() );
+
+    /* std::cerr << "unsorted histogram" << std::endl; */
+    /* debug_print( d_histogram, histogram_count ); */
+
+    /* std::cerr << "unsorted symbols" << std::endl; */
+    /* debug_print( d_input_positions, histogram_count ); */
 
     radix_sort(
             d_histogram,
@@ -103,7 +99,14 @@ void parallel_huffman_encode(
 
     checkCudaErrors( cudaDeviceSynchronize() );
 
+    /* std::cerr << "sorted histogram" << std::endl; */
+    /* debug_print( d_sorted_histogram, histogram_count ); */
+
+    /* std::cerr << "sorted symbols" << std::endl; */
+    /* debug_print( d_output_positions, histogram_count ); */
+
     // TODO: generate huffman tree
+    make_huffman_tree( d_sorted_histogram, d_output_positions, histogram_count );
 
     // TODO: map input symbols to output symbols and compact
 
@@ -117,22 +120,12 @@ void parallel_huffman_encode(
     output_size = input_size;
 #endif
 
-    // TODO: update d_input with whatever buffer ends up being used
+    // TODO: change d_input to whatever buffer ends up being used
 
     checkCudaErrors( cudaHostUnregister( static_cast<void*>( const_cast<unsigned char*>( h_input_buffer ) ) ) );
     checkCudaErrors( cudaHostRegister( static_cast<void*>( h_output_buffer ), output_size, cudaHostRegisterMapped ) );
 
-    j = 0;
-    for ( unsigned int i = 0 ; i < output_size ; i += stream_size ) {
-        const unsigned int chunk_size = ( i + stream_size > output_size ? output_size - i : stream_size );
-        checkCudaErrors( cudaMemcpyAsync( &h_output_buffer[i], &d_input[i], chunk_size, cudaMemcpyDeviceToHost, streams[j] ) );
-        j = ( j + 1 ) % STREAM_COUNT;
-    }
-
-    for ( int i = 0 ; i < STREAM_COUNT ; ++i ) {
-        checkCudaErrors( cudaStreamSynchronize( streams[i] ) );
-        checkCudaErrors( cudaStreamDestroy( streams[i] ) );
-    }
+    checkCudaErrors( cudaMemcpyAsync( h_output_buffer, d_input, output_size, cudaMemcpyDeviceToHost, streams[0] ) );
 
     checkCudaErrors( cudaDeviceSynchronize() );
 
@@ -143,7 +136,7 @@ void parallel_huffman_encode(
     checkCudaErrors( cudaFree( d_input ) );
     checkCudaErrors( cudaFree( d_output ) );
     checkCudaErrors( cudaFree( d_output_size ) );
-    checkCudaErrors( cudaFree( d_tree ) );
+    checkCudaErrors( cudaFree( d_code_map ) );
     checkCudaErrors( cudaFree( d_histogram ) );
     checkCudaErrors( cudaFree( d_sorted_histogram ) );
     checkCudaErrors( cudaFree( d_radix_histogram ) );

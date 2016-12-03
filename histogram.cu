@@ -17,21 +17,17 @@ void histogram_kernel(
     __syncthreads();
 
     // get the index this thread is responsible for
-    const unsigned int idx = threadIdx.x + ( blockIdx.x << 8 );
+    const unsigned int idx = threadIdx.x + blockIdx.x * blockDim.x;
 
     // validate against input size
-    if ( idx >= input_size ) {
-        __syncthreads();
-        return;
+    if ( idx < input_size ) {
+        // get the value / bin
+        const unsigned char val = input[idx];
+
+        // do atomic increment of the bin in shared memory
+        atomicAdd( &shared_histogram[val], 1 );
     }
 
-    // get the value / bin
-    const unsigned char val = input[idx];
-
-    // do atomic increment of the bin in shared memory
-    atomicAdd( &shared_histogram[val], 1 );
-
-    // wait until shared memory is finished being used by all threads in the block
     __syncthreads();
 
     // increment global memory with count in shared memory for each bin
