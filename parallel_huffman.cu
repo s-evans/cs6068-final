@@ -9,13 +9,6 @@
 
 #define STREAM_COUNT 5
 
-typedef struct _code_word_t {
-    unsigned int code;
-    unsigned int code_size;
-} code_word_t;
-
-static code_word_t code_map[UCHAR_MAX] = {0};
-
 __global__ void init_positions(
         unsigned int* const d_positions )
 {
@@ -46,10 +39,6 @@ void parallel_huffman_encode(
     unsigned int* d_output_size;
     checkCudaErrors( cudaMalloc( &d_output_size, sizeof( *d_output_size ) ) );
     checkCudaErrors( cudaMemsetAsync( d_output_size, 0, sizeof( *d_output_size ), streams[1] ) );
-
-    code_word_t* d_code_map;
-    const unsigned int code_map_size = sizeof( code_map );
-    checkCudaErrors( cudaMalloc( &d_code_map, code_map_size ) );
 
     unsigned int* d_histogram;
     const unsigned int histogram_count = 1 << ( sizeof( *d_input ) << 3 );
@@ -106,7 +95,7 @@ void parallel_huffman_encode(
     /* debug_print( d_output_positions, histogram_count ); */
 
     // TODO: generate huffman tree
-    make_huffman_tree( d_sorted_histogram, d_output_positions, histogram_count );
+    make_huffman_tree( d_sorted_histogram, d_output_positions );
 
     // TODO: map input symbols to output symbols and compact
 
@@ -136,7 +125,6 @@ void parallel_huffman_encode(
     checkCudaErrors( cudaFree( d_input ) );
     checkCudaErrors( cudaFree( d_output ) );
     checkCudaErrors( cudaFree( d_output_size ) );
-    checkCudaErrors( cudaFree( d_code_map ) );
     checkCudaErrors( cudaFree( d_histogram ) );
     checkCudaErrors( cudaFree( d_sorted_histogram ) );
     checkCudaErrors( cudaFree( d_radix_histogram ) );

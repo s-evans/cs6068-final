@@ -4,6 +4,17 @@
 
 #include <ostream>
 
+typedef struct _code_word_t {
+    unsigned int code;
+    unsigned int size;
+} code_word_t;
+
+struct node_t {
+    unsigned int weight;
+    unsigned short left_idx;
+    unsigned char symbol;
+};
+
 __device__ unsigned int d_start_idx;
 
 __global__ void find_start_idx(
@@ -43,6 +54,19 @@ std::ostream& operator<< ( std::ostream& stream, node_t const& node )
         << "; node.symbol: "  << static_cast<unsigned int>( node.symbol ) 
         << "; node.weight: " << static_cast<unsigned int>( node.weight ) 
         << ";";
+}
+
+std::ostream& operator<< ( std::ostream& stream, code_word_t const& code_word )
+{
+    stream << "code_word.code: " << static_cast<unsigned int>( code_word.code )
+        << "; code_word.size: "  << static_cast<unsigned int>( code_word.size )
+        << "; code word: "; 
+
+    for ( unsigned int i = 0 ; i < code_word.size ; ++i ) {
+        stream << static_cast<bool>( ( code_word.code >> ( code_word.size - i - 1 ) ) & 1 );
+    }
+
+    return stream << ";";
 }
 
 __global__ void insert_super_node (
@@ -97,13 +121,70 @@ __global__ void insert_super_node (
     }
 }
 
+__global__ void generate_code_words(
+    code_word_t* code_word_map,
+    const node_t* const nodes )
+{
+    const unsigned int tid = threadIdx.x + blockDim.x * blockIdx.x;
+    const unsigned int init_idx = tid / 2;
+    const unsigned int thread_dir = tid % 2;
+
+    // TODO: fix this
+
+    /* for ( unsigned int depth_limit = 1 ; depth_limit < 3 ; ++depth_limit  ) { */
+    for ( unsigned int depth_limit = 1 ; depth_limit < blockDim.x / 2 ; ++depth_limit  ) {
+
+        unsigned int idx = init_idx;
+
+        for ( unsigned int depth = 0 ; depth < depth_limit ; ++depth ) {
+
+            if ( idx == USHRT_MAX ) {
+                continue;
+            }
+
+            if ( nodes[idx].weight == 0 ) {
+                idx = USHRT_MAX;
+                continue;
+            }
+
+            if ( nodes[idx].left_idx == USHRT_MAX ) {
+                idx = USHRT_MAX;
+                continue;
+            }
+
+            idx = nodes[idx].left_idx + thread_dir;
+        }
+
+        if ( idx == USHRT_MAX ) {
+            continue;
+        }
+
+        if ( nodes[idx].left_idx != USHRT_MAX ) {
+            continue;
+        }
+
+        const unsigned char symbol = nodes[idx].symbol;
+        atomicOr( &code_word_map[symbol].code, thread_dir << ( depth_limit - 1 ) );
+        atomicAdd( &code_word_map[symbol].size, 1 );
+    }
+}
+
 void make_huffman_tree(
         const unsigned int* const d_sorted_histogram,
-        const unsigned int* const d_sorted_symbols,
-        const unsigned int histogram_size)
+        const unsigned int* const d_sorted_symbols)
 {
+    const unsigned int histogram_size = 256;
+
     // TODO: free device buffer eventually
     // TODO: do something useful with the tree
+
+    // TODO: rename function
+    // TODO: rename file
+
+    code_word_t* d_code_word_map;
+    const unsigned int code_map_size = sizeof( *d_code_word_map ) * 256;
+    checkCudaErrors( cudaMalloc( &d_code_word_map, code_map_size ) );
+    checkCudaErrors( cudaMemsetAsync( d_code_word_map, 0, code_map_size, 0 ) );
 
     void* p_d_start_idx; 
     checkCudaErrors( cudaGetSymbolAddress( &p_d_start_idx, d_start_idx ) );
@@ -127,19 +208,28 @@ void make_huffman_tree(
             d_nodes,
             node_count );
 
+    // TODO: move this loop to the kernel
+
     for ( unsigned int i = 0 ; i < max_node_count ; i += 2 ) {
         insert_super_node<<<1, max_node_count - i, 0, 0>>>( &d_nodes[i], i );
     }
 
-    // TODO: get idx of head (ie. furthest right node) (ie. highest weight node)
+    generate_code_words<<<1, max_node_count * 2, 0, 0>>>( d_code_word_map, d_nodes );
 
     /* std::cerr << "node_count: " << node_count << std::endl; */
     /* std::cerr << "max_node_count: " << max_node_count << std::endl; */
-    /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
 
-    /* for ( unsigned int i = 0 ; i < max_node_count ; ++i ) { */
-    /*     node_t tmp_node; */
-    /*     checkCudaErrors( cudaMemcpy( &tmp_node, &d_nodes[i], sizeof( tmp_node ), cudaMemcpyDeviceToHost ) ); */
-    /*     std::cerr << "idx: " << i << "; " << tmp_node << std::endl; */
-    /* } */
+    checkCudaErrors( cudaStreamSynchronize( 0 ) );
+    for ( unsigned int i = 0 ; i < max_node_count ; ++i ) {
+        node_t tmp;
+        checkCudaErrors( cudaMemcpy( &tmp, &d_nodes[i], sizeof( tmp ), cudaMemcpyDeviceToHost ) );
+        std::cerr << "idx: " << i << "; " << tmp << std::endl;
+    }
+
+    checkCudaErrors( cudaStreamSynchronize( 0 ) );
+    for ( unsigned int i = 0 ; i < UCHAR_MAX ; ++i ) {
+        code_word_t tmp;
+        checkCudaErrors( cudaMemcpy( &tmp, &d_code_word_map[i], sizeof( tmp ), cudaMemcpyDeviceToHost ) );
+        std::cerr << "idx: " << i << "; " << tmp << std::endl;
+    }
 }
