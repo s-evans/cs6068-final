@@ -94,8 +94,13 @@ void parallel_huffman_encode(
     /* std::cerr << "sorted symbols" << std::endl; */
     /* debug_print( d_output_positions, histogram_count ); */
 
-    // TODO: generate huffman tree
-    make_huffman_tree( d_sorted_histogram, d_output_positions );
+    huffman_encode(
+            d_output,
+            &output_size,
+            d_input,
+            input_size,
+            d_sorted_histogram,
+            d_output_positions );
 
     // TODO: map input symbols to output symbols and compact
 

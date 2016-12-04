@@ -1,6 +1,6 @@
 *.d
 *.o
-*.swp
+*.sw?
 *.un~
 *~
 cscope.*

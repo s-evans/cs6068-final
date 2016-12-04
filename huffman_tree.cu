@@ -5,7 +5,7 @@
 #include <ostream>
 
 typedef struct _code_word_t {
-    unsigned int code;
+    unsigned int code[8];
     unsigned int size;
 } code_word_t;
 
@@ -50,20 +50,18 @@ __global__ void initialize_nodes(
 
 std::ostream& operator<< ( std::ostream& stream, node_t const& node )
 {
-    return stream << "node.left_idx: " << static_cast<int>( node.left_idx == UCHAR_MAX ? -1 : node.left_idx * 2 ) 
-        << "; node.symbol: "  << static_cast<unsigned int>( node.symbol ) 
-        << "; node.weight: " << static_cast<unsigned int>( node.weight ) 
+    return stream << "node.left_idx: " << static_cast<int>( node.left_idx == UCHAR_MAX ? -1 : node.left_idx * 2 )
+        << "; node.symbol: "  << static_cast<unsigned int>( node.symbol )
+        << "; node.weight: " << static_cast<unsigned int>( node.weight )
         << ";";
 }
 
 std::ostream& operator<< ( std::ostream& stream, code_word_t const& code_word )
 {
-    stream << "code_word.code: " << static_cast<unsigned int>( code_word.code )
-        << "; code_word.size: "  << static_cast<unsigned int>( code_word.size )
-        << "; code word: "; 
+    stream << "; code_word.size: "  << static_cast<unsigned int>( code_word.size ) << "; code word: ";
 
-    for ( unsigned int i = 0 ; i < code_word.size ; ++i ) {
-        stream << static_cast<bool>( ( code_word.code >> ( code_word.size - i - 1 ) ) & 1 );
+    for ( int i = code_word.size - 1 ; i >= 0 ; --i ) {
+        stream << static_cast<bool>( ( code_word.code[i / 32] >> ( i % 32 ) ) & 1 );
     }
 
     return stream << ";";
@@ -127,34 +125,34 @@ __global__ void insert_super_nodes (
     }
 }
 
-__device__ void init( unsigned int* const stack )
+__device__ void init( unsigned short* const stack )
 {
     stack[0] = 1;
 }
 
 __device__ void push(
-        unsigned int* const stack,
-        unsigned int const idx,
-        unsigned int const code_bit )
+        unsigned short* const stack,
+        unsigned short const idx,
+        unsigned short const bit_offset )
 {
-    const unsigned int ptr = stack[0];
+    const unsigned short ptr = stack[0];
     stack[0] += 2;
     stack[ptr] = idx;
-    stack[ptr + 1] = code_bit;
+    stack[ptr + 1] = bit_offset;
 }
 
 __device__ void pop(
-        unsigned int* const stack,
-        unsigned int* const idx,
-        unsigned int* const code_bit )
+        unsigned short* const stack,
+        unsigned short* const idx,
+        unsigned short* const bit_offset )
 {
-    const unsigned int ptr = stack[0] - 2;
+    const unsigned short ptr = stack[0] - 2;
     stack[0] -= 2;
     *idx = stack[ptr];
-    *code_bit = stack[ptr + 1];
+    *bit_offset = stack[ptr + 1];
 }
 
-__device__ bool empty( const unsigned int* const stack )
+__device__ bool empty( const unsigned short* const stack )
 {
     return ( stack[0] == 1 );
 }
@@ -167,43 +165,62 @@ __global__ void generate_code_words(
 
     const unsigned int tid = threadIdx.x;
     const unsigned int direction = tid % 2;
-    unsigned int stack[1024];
+    unsigned short stack[1024];
 
     if ( nodes[tid].weight == 0 ) {
         return;
     }
 
     init( stack );
-    push( stack, tid, direction );
+    push( stack, tid, 0 );
 
     while ( !empty( stack ) ) {
 
-        unsigned int idx;
-        unsigned int code_bit;
+        unsigned short idx;
+        unsigned short bit_offset;
 
-        pop( stack, &idx, &code_bit );
+        pop( stack, &idx, &bit_offset );
 
         if ( nodes[idx].left_idx == UCHAR_MAX ) {
             const unsigned char symbol = nodes[idx].symbol;
-            atomicOr( &code_word_map[symbol].code, code_bit );
+            atomicOr( &code_word_map[symbol].code[ bit_offset / 32 ], direction << ( bit_offset % 32 ) );
             atomicAdd( &code_word_map[symbol].size, 1 );
             continue;
         }
 
         idx = nodes[idx].left_idx * 2;
-        code_bit <<= 1;
-        push( stack, idx, code_bit );
-        push( stack, idx + 1, code_bit );
+        ++bit_offset;
+        push( stack, idx, bit_offset );
+        push( stack, idx + 1, bit_offset );
     }
 }
 
-void make_huffman_tree(
-        const unsigned int* const d_sorted_histogram,
-        const unsigned int* const d_sorted_symbols)
+__global__ void generate_output(
+        unsigned char* const output,
+        unsigned char const* const input,
+        unsigned int const input_size,
+        const code_word_t* const code_word_map )
+{
+    const unsigned int tid = threadIdx.x + blockDim.x * blockIdx.x;
+    const unsigned int idx = tid;
+    const unsigned int symbol = input[idx];
+
+    code_word_map[symbol].code;
+    code_word_map[symbol].size;
+
+    // TODO: implement
+}
+
+void huffman_encode(
+        unsigned char* const d_output,
+        unsigned int* const output_size,
+        unsigned char const* const d_input,
+        unsigned int const input_size,
+        unsigned int const* const d_sorted_histogram,
+        unsigned int const* const d_sorted_symbols )
 {
     const unsigned int histogram_size = 256;
 
-    // TODO: rename function
     // TODO: rename file
 
     code_word_t* d_code_word_map;
@@ -211,7 +228,7 @@ void make_huffman_tree(
     checkCudaErrors( cudaMalloc( &d_code_word_map, code_map_size ) );
     checkCudaErrors( cudaMemsetAsync( d_code_word_map, 0, code_map_size, 0 ) );
 
-    void* p_d_start_idx; 
+    void* p_d_start_idx;
     checkCudaErrors( cudaGetSymbolAddress( &p_d_start_idx, d_start_idx ) );
     checkCudaErrors( cudaMemsetAsync( p_d_start_idx, 0, sizeof( d_start_idx ), 0 ) );
 
@@ -228,7 +245,7 @@ void make_huffman_tree(
     node_t* d_nodes;
     checkCudaErrors( cudaMalloc( &d_nodes, sizeof( *d_nodes ) * max_node_count ) );
     initialize_nodes<<<1, max_node_count, 0, 0>>>(
-            &d_sorted_histogram[start_idx], 
+            &d_sorted_histogram[start_idx],
             &d_sorted_symbols[start_idx],
             d_nodes,
             node_count );
@@ -238,24 +255,36 @@ void make_huffman_tree(
 
     insert_super_nodes<<<1, max_node_count, 0, 0>>>( d_nodes );
 
-    /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
-    /* for ( unsigned int i = 0 ; i < max_node_count ; ++i ) { */
-    /*     node_t tmp; */
-    /*     checkCudaErrors( cudaMemcpy( &tmp, &d_nodes[i], sizeof( tmp ), cudaMemcpyDeviceToHost ) ); */
-    /*     std::cerr << "idx: " << i << "; " << tmp << std::endl; */
-    /* } */
+    checkCudaErrors( cudaStreamSynchronize( 0 ) );
+    for ( unsigned int i = 0 ; i < max_node_count ; ++i ) {
+        node_t tmp;
+        checkCudaErrors( cudaMemcpy( &tmp, &d_nodes[i], sizeof( tmp ), cudaMemcpyDeviceToHost ) );
+        std::cerr << "idx: " << i << "; " << tmp << std::endl;
+    }
 
     generate_code_words<<<1, max_node_count, 0, 0>>>( d_code_word_map, d_nodes );
 
-    /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
-    /* for ( unsigned int i = 0 ; i < UCHAR_MAX ; ++i ) { */
-    /*     code_word_t tmp; */
-    /*     checkCudaErrors( cudaMemcpy( &tmp, &d_code_word_map[i], sizeof( tmp ), cudaMemcpyDeviceToHost ) ); */
-    /*     std::cerr << "idx: " << i << "; " << tmp << std::endl; */
-    /* } */
+    checkCudaErrors( cudaStreamSynchronize( 0 ) );
+    for ( unsigned int i = 0 ; i < 256 ; ++i ) {
+        code_word_t tmp;
+        checkCudaErrors( cudaMemcpy( &tmp, &d_code_word_map[i], sizeof( tmp ), cudaMemcpyDeviceToHost ) );
+        std::cerr << "idx: " << i << "; " << tmp << std::endl;
+    }
 
-    generate_output<<<1, max_node_count, 0, 0>>>( d_code_word_map, d_nodes );
+    /* std::cerr << "code_map_size: " << code_map_size << "; " << std::endl; */
 
+    // TODO: generate output string of code words
+
+    const dim3 block_size( 256, 1, 1 );
+    const dim3 grid_size( ( input_size + block_size.x - 1 ) / block_size.x, 1, 1 );
+    generate_output<<<grid_size, block_size, 0, 0>>>(
+            d_output,
+            d_input,
+            input_size,
+            d_code_word_map );
+
+    // TODO: ensure that the new output size gets set
+    // TODO: copy output buffer from device to host
     // TODO: must output the code word table as well
 
     checkCudaErrors( cudaFree( d_code_word_map ) );
