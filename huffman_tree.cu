@@ -268,6 +268,8 @@ __global__ void generate_output(
     const code_word_t* const code_word = &code_word_map[symbol];
     const unsigned int codeword_bits = code_word->size;
 
+    unsigned char stage[4] = {0};
+
     for ( unsigned int i = 0 ; i < codeword_bits ; ++i ) {
 
         const unsigned int code_word_bit_position = codeword_bits - i - 1;
@@ -276,20 +278,18 @@ __global__ void generate_output(
 
         const unsigned int bit = ( code_word->code[code_word_word_position] >> code_word_word_bit_position ) & 1;
 
-        if ( !bit ) {
-            continue;
-        }
-
         const unsigned int current_bit_offset = bit_offset + i;
         const unsigned int word_bit_offset = current_bit_offset % 32;
         const unsigned int word_byte_offset = word_bit_offset / 8;
         const unsigned int word_byte_bit_offset = 7 - ( current_bit_offset % 8 );
 
-        unsigned char stage[4] = {0};
-        stage[word_byte_offset] = bit << word_byte_bit_offset;
+        stage[word_byte_offset] |= bit << word_byte_bit_offset;
 
-        const unsigned int word_offset = current_bit_offset / 32;
-        atomicOr( output_words + word_offset, *reinterpret_cast<unsigned int*>( &stage ) );
+        if ( i == codeword_bits - 1 || word_bit_offset == 31 ) {
+            const unsigned int word_offset = current_bit_offset / 32;
+            atomicOr( output_words + word_offset, *reinterpret_cast<unsigned int*>( &stage ) );
+            stage[3] = stage[2] = stage[1] = stage[0] = 0;
+        }
     }
 }
 
