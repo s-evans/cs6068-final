@@ -35,7 +35,7 @@ void parallel_huffman_encode(
 
     unsigned char* d_output;
     checkCudaErrors( cudaMalloc( &d_output, sizeof( *d_output ) * input_size ) );
-    checkCudaErrors( cudaMemsetAsync( d_output, input_size, 0, streams[1] ) );
+    checkCudaErrors( cudaMemsetAsync( d_output, 0, input_size, streams[1] ) );
 
     unsigned int* d_histogram;
     const unsigned int histogram_count = 1 << ( sizeof( *d_input ) << 3 );

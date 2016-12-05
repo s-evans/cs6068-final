@@ -111,8 +111,6 @@ int main( int argc, char** argv )
         return 1;
     }
 
-    // TODO: truncate output file when finished
-
     unsigned int output_file_size = 0;
 
     GpuTimer timer;
@@ -145,7 +143,7 @@ int main( int argc, char** argv )
     input_file.close();
 
     if ( truncate( output_file_path.string().c_str(), output_file_size ) ) {
-        std::cerr << "Failed to flush output data: " << strerror( errno ) << std::endl;
+        std::cerr << "Failed to truncate output file: " << strerror( errno ) << std::endl;
     }
 
     return err;

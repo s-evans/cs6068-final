@@ -252,7 +252,7 @@ __global__ void generate_output(
     unsigned char* const output,
     unsigned char const* const input,
     unsigned int const input_size,
-    const code_word_t* const code_word_map,
+    code_word_t const* const code_word_map,
     unsigned int const* const output_positions )
 {
     const unsigned int tid = threadIdx.x + blockDim.x * blockIdx.x;
@@ -268,8 +268,6 @@ __global__ void generate_output(
     const code_word_t* const code_word = &code_word_map[symbol];
     const unsigned int codeword_bits = code_word->size;
 
-    // TODO: not sure this is working quite yet
-
     for ( unsigned int i = 0 ; i < codeword_bits ; ++i ) {
 
         const unsigned int code_word_bit_position = codeword_bits - i - 1;
@@ -283,14 +281,14 @@ __global__ void generate_output(
         }
 
         const unsigned int current_bit_offset = bit_offset + i;
-        const unsigned int word_offset = current_bit_offset / 32;
         const unsigned int word_bit_offset = current_bit_offset % 32;
         const unsigned int word_byte_offset = word_bit_offset / 8;
-        const unsigned int word_byte_bit_offset = current_bit_offset % 8;
+        const unsigned int word_byte_bit_offset = 7 - ( current_bit_offset % 8 );
 
         unsigned char stage[4] = {0};
         stage[word_byte_offset] = bit << word_byte_bit_offset;
 
+        const unsigned int word_offset = current_bit_offset / 32;
         atomicOr( output_words + word_offset, *reinterpret_cast<unsigned int*>( &stage ) );
     }
 }
@@ -340,6 +338,7 @@ void huffman_encode(
 
     insert_super_nodes<<< 1, max_node_count, 0, 0>>>( d_nodes );
 
+    /* std::cerr << std::endl << "tree" << std::endl; */
     /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
     /* for ( unsigned int i = 0 ; i < max_node_count ; ++i ) { */
     /*     node_t tmp; */
@@ -349,6 +348,7 @@ void huffman_encode(
 
     generate_code_words<<< 1, max_node_count, 0, 0>>>( d_code_word_map, d_nodes );
 
+    /* std::cerr << std::endl << "code words" << std::endl; */
     /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
     /* for ( unsigned int i = 0 ; i < 256 ; ++i ) { */
     /*     code_word_t tmp; */
@@ -373,6 +373,7 @@ void huffman_encode(
 
     blelloch_scan( d_output_positions, output_positions_count, 0 );
 
+    /* std::cerr << std::endl << "output positions" << std::endl; */
     /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
     /* for ( unsigned int i = 0 ; i < output_positions_count ; ++i ) { */
     /*     unsigned int tmp; */
@@ -387,14 +388,15 @@ void huffman_encode(
             d_code_word_map,
             d_output_positions );
 
-    // TODO: may barf if file is a multiple of 2
+    // TODO: may barf if file size is a multiple/power of 2
     checkCudaErrors( cudaMemcpy( output_size, d_output_positions + input_size, sizeof( *output_size ), cudaMemcpyDeviceToHost ) );
     *output_size = ( *output_size + 8 - 1 ) / 8;
 
+    /* std::cerr << std::endl << "output file" << std::endl; */
     /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
     /* for ( unsigned int i = 0 ; i < *output_size ; i += 16 ) { */
     /*     unsigned char tmp[16] = {0}; */
-    /*     const unsigned int remain = input_size - i; */
+    /*     const unsigned int remain = *output_size - i; */
     /*     checkCudaErrors( cudaMemcpy( &tmp, &d_output[i], ( remain / 16 ? 16 : remain ), cudaMemcpyDeviceToHost ) ); */
     /*     fprintf( stderr, "%08x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n", */ 
     /*                 i, tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], tmp[6], tmp[7], tmp[8], tmp[9], tmp[10], tmp[11], tmp[12], tmp[13], tmp[14], tmp[15] ); */
