@@ -108,54 +108,48 @@ __global__ void insert_super_nodes(
     node_t* const pnodes )
 {
     __shared__ unsigned int not_moved;
-    __shared__ unsigned int left_weight;
-    __shared__ unsigned int right_weight;
     __shared__ unsigned int new_weight;
-    const unsigned int idx = threadIdx.x;
-    const node_t* const end_nodes = pnodes + blockDim.x;
+    __shared__ node_t snodes[512];
 
-    // TODO: update to use shared memory?
+    const unsigned int idx = threadIdx.x + blockDim.x * blockIdx.x;
 
-    for ( node_t* nodes = pnodes ; nodes < end_nodes ; nodes += 2 ) {
-        const unsigned int offset = nodes - pnodes;
+    snodes[idx] = pnodes[idx];
+
+    __syncthreads();
+
+    for ( unsigned int offset = 0 ; offset < blockDim.x ; offset += 2 ) {
 
         if ( idx == 0 ) {
             not_moved = 0;
-            left_weight = nodes[0].weight;
-            right_weight = nodes[1].weight;
-            new_weight = left_weight + right_weight;
+            new_weight = snodes[offset].weight + snodes[offset + 1].weight;
         }
+
+        const unsigned int my_weight = snodes[offset + idx].weight;
 
         __syncthreads();
-
-        if ( left_weight == 0 || right_weight == 0 ) {
-            return;
-        }
-
-        const unsigned int my_weight = nodes[idx].weight;
 
         if ( my_weight == 0 ) {
             return;
         }
 
-        const bool move = ( my_weight >= new_weight );
-        node_t node;
-
-        if ( move ) {
-            node = nodes[idx];
+        if ( my_weight >= new_weight ) {
+            const node_t node = snodes[offset + idx];
+            __syncthreads();
+            snodes[offset + idx + 1] = node;
         } else {
             atomicAdd( &not_moved, 1 );
+            __syncthreads();
         }
 
-        __syncthreads();
-
-        if ( move ) {
-            nodes[idx + 1] = node;
-        } else if ( idx == 0 ) {
-            node_t* const pnode = &nodes[not_moved];
+        if ( idx == 0 && not_moved ) {
+            node_t* const pnode = &snodes[offset + not_moved];
             pnode->left_idx = offset / 2;
             pnode->symbol = 0;
             pnode->weight = new_weight;
+        }
+
+        if ( idx == 0 || idx == 1 ) {
+            pnodes[offset + idx] = snodes[offset + idx];
         }
 
         __syncthreads();
