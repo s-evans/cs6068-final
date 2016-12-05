@@ -31,8 +31,7 @@ __global__ void initialize_nodes(
         const unsigned int* const sorted_histogram,
         const unsigned int* const sorted_symbols,
         node_t* const nodes,
-        const unsigned int populated_nodes
-        )
+        const unsigned int populated_nodes )
 {
     const unsigned int idx = threadIdx.x;
 
@@ -60,6 +59,42 @@ std::ostream& operator<< ( std::ostream& stream, code_word_t const& code_word )
 {
     stream << "; code_word.size: "  << static_cast<unsigned int>( code_word.size ) << "; code word: ";
 
+    /* stream << std::hex << std::setw(2) << std::setfill( '0' ) */ 
+    /*     << static_cast<unsigned int>( code_word.code[0] ) */
+    /*     << static_cast<unsigned int>( code_word.code[1] ) */
+    /*     << static_cast<unsigned int>( code_word.code[2] ) */
+    /*     << static_cast<unsigned int>( code_word.code[3] ) */
+    /*     << static_cast<unsigned int>( code_word.code[4] ) */
+    /*     << static_cast<unsigned int>( code_word.code[5] ) */
+    /*     << static_cast<unsigned int>( code_word.code[6] ) */
+    /*     << static_cast<unsigned int>( code_word.code[7] ) */
+    /*     << static_cast<unsigned int>( code_word.code[8] ) */
+    /*     << static_cast<unsigned int>( code_word.code[9] ) */
+    /*     << static_cast<unsigned int>( code_word.code[10] ) */
+    /*     << static_cast<unsigned int>( code_word.code[11] ) */
+    /*     << static_cast<unsigned int>( code_word.code[12] ) */
+    /*     << static_cast<unsigned int>( code_word.code[13] ) */
+    /*     << static_cast<unsigned int>( code_word.code[14] ) */
+    /*     << static_cast<unsigned int>( code_word.code[15] ) */
+    /*     << static_cast<unsigned int>( code_word.code[16] ) */
+    /*     << static_cast<unsigned int>( code_word.code[17] ) */
+    /*     << static_cast<unsigned int>( code_word.code[18] ) */
+    /*     << static_cast<unsigned int>( code_word.code[19] ) */
+    /*     << static_cast<unsigned int>( code_word.code[20] ) */
+    /*     << static_cast<unsigned int>( code_word.code[21] ) */
+    /*     << static_cast<unsigned int>( code_word.code[22] ) */
+    /*     << static_cast<unsigned int>( code_word.code[23] ) */
+    /*     << static_cast<unsigned int>( code_word.code[24] ) */
+    /*     << static_cast<unsigned int>( code_word.code[25] ) */
+    /*     << static_cast<unsigned int>( code_word.code[26] ) */
+    /*     << static_cast<unsigned int>( code_word.code[27] ) */
+    /*     << static_cast<unsigned int>( code_word.code[28] ) */
+    /*     << static_cast<unsigned int>( code_word.code[29] ) */
+    /*     << static_cast<unsigned int>( code_word.code[30] ) */
+    /*     << static_cast<unsigned int>( code_word.code[31] ) */
+    /*     << std::dec << std::setw(0) << std::setfill( ' ' ) */
+    /*     << "; code word: "; */
+
     for ( int i = code_word.size - 1 ; i >= 0 ; --i ) {
         stream << static_cast<bool>( ( code_word.code[i / 32] >> ( i % 32 ) ) & 1 );
     }
@@ -67,8 +102,8 @@ std::ostream& operator<< ( std::ostream& stream, code_word_t const& code_word )
     return stream << ";";
 }
 
-__global__ void insert_super_nodes (
-        node_t* const pnodes )
+__global__ void insert_super_nodes(
+    node_t* const pnodes )
 {
     __shared__ unsigned int not_moved;
     __shared__ unsigned int left_weight;
@@ -131,9 +166,9 @@ __device__ void init( unsigned short* const stack )
 }
 
 __device__ void push(
-        unsigned short* const stack,
-        unsigned short const idx,
-        unsigned short const bit_offset )
+    unsigned short* const stack,
+    unsigned short const idx,
+    unsigned short const bit_offset )
 {
     const unsigned short ptr = stack[0];
     stack[0] += 2;
@@ -142,9 +177,9 @@ __device__ void push(
 }
 
 __device__ void pop(
-        unsigned short* const stack,
-        unsigned short* const idx,
-        unsigned short* const bit_offset )
+    unsigned short* const stack,
+    unsigned short* const idx,
+    unsigned short* const bit_offset )
 {
     const unsigned short ptr = stack[0] - 2;
     stack[0] -= 2;
@@ -195,29 +230,67 @@ __global__ void generate_code_words(
     }
 }
 
-__global__ void generate_output(
-        unsigned char* const output,
-        unsigned char const* const input,
-        unsigned int const input_size,
-        const code_word_t* const code_word_map )
+__global__ void map_output_positions(
+    unsigned int* const output_positions,
+    unsigned char const* const input,
+    unsigned int const input_size,
+    const code_word_t* const code_word_map )
 {
     const unsigned int tid = threadIdx.x + blockDim.x * blockIdx.x;
-    const unsigned int idx = tid;
-    const unsigned int symbol = input[idx];
 
-    code_word_map[symbol].code;
-    code_word_map[symbol].size;
+    if ( tid >= input_size ) {
+        return;
+    }
 
-    // TODO: implement
+    const unsigned int symbol = input[tid];
+    const unsigned int size = code_word_map[symbol].size;
+    output_positions[tid] = size;
+}
+
+__global__ void generate_output(
+    unsigned char* const output,
+    unsigned char const* const input,
+    unsigned int const input_size,
+    const code_word_t* const code_word_map,
+    unsigned int const* const output_positions )
+{
+    const unsigned int tid = threadIdx.x + blockDim.x * blockIdx.x;
+
+    if ( tid >= input_size ) {
+        return;
+    }
+
+    const unsigned int bit_offset = output_positions[tid];
+    const unsigned int word_offset = bit_offset / 32;
+
+    unsigned int* output_words = reinterpret_cast<unsigned int*>( output );
+    output_words += word_offset;
+
+    const unsigned int symbol = input[tid];
+    const code_word_t* const code_word = &code_word_map[symbol];
+    const unsigned int codeword_bits = code_word->size;
+
+    for ( unsigned int i = 0 ; i < codeword_bits ; ++i ) {
+        const unsigned int bit = ( code_word->code[32 - i / 8 - 1] >> ( i % 8 ) ) & 1;
+
+        if ( !bit ) {
+            continue;
+        }
+
+        // TODO: figure out packing and shifting issues
+
+        const unsigned int or_mask = bit << i;
+        atomicOr( output_words + i / 32, or_mask );
+    }
 }
 
 void huffman_encode(
-        unsigned char* const d_output,
-        unsigned int* const output_size,
-        unsigned char const* const d_input,
-        unsigned int const input_size,
-        unsigned int const* const d_sorted_histogram,
-        unsigned int const* const d_sorted_symbols )
+    unsigned char* const d_output,
+    unsigned int* const output_size,
+    unsigned char const* const d_input,
+    unsigned int const input_size,
+    unsigned int const* const d_sorted_histogram,
+    unsigned int const* const d_sorted_symbols )
 {
     const unsigned int histogram_size = 256;
 
@@ -232,7 +305,7 @@ void huffman_encode(
     checkCudaErrors( cudaGetSymbolAddress( &p_d_start_idx, d_start_idx ) );
     checkCudaErrors( cudaMemsetAsync( p_d_start_idx, 0, sizeof( d_start_idx ), 0 ) );
 
-    find_start_idx<<<1, histogram_size, 0, 0>>>( d_sorted_histogram );
+    find_start_idx<<< 1, histogram_size, 0, 0>>>( d_sorted_histogram );
 
     unsigned int start_idx;
     checkCudaErrors( cudaMemcpyAsync( &start_idx, p_d_start_idx, sizeof( start_idx ), cudaMemcpyDeviceToHost, 0 ) );
@@ -244,16 +317,16 @@ void huffman_encode(
 
     node_t* d_nodes;
     checkCudaErrors( cudaMalloc( &d_nodes, sizeof( *d_nodes ) * max_node_count ) );
-    initialize_nodes<<<1, max_node_count, 0, 0>>>(
-            &d_sorted_histogram[start_idx],
-            &d_sorted_symbols[start_idx],
-            d_nodes,
-            node_count );
+    initialize_nodes<<< 1, max_node_count, 0, 0>>>(
+        &d_sorted_histogram[start_idx],
+        &d_sorted_symbols[start_idx],
+        d_nodes,
+        node_count );
 
     /* std::cerr << "node_count: " << node_count << std::endl; */
     /* std::cerr << "max_node_count: " << max_node_count << std::endl; */
 
-    insert_super_nodes<<<1, max_node_count, 0, 0>>>( d_nodes );
+    insert_super_nodes<<< 1, max_node_count, 0, 0>>>( d_nodes );
 
     checkCudaErrors( cudaStreamSynchronize( 0 ) );
     for ( unsigned int i = 0 ; i < max_node_count ; ++i ) {
@@ -262,7 +335,7 @@ void huffman_encode(
         std::cerr << "idx: " << i << "; " << tmp << std::endl;
     }
 
-    generate_code_words<<<1, max_node_count, 0, 0>>>( d_code_word_map, d_nodes );
+    generate_code_words<<< 1, max_node_count, 0, 0>>>( d_code_word_map, d_nodes );
 
     checkCudaErrors( cudaStreamSynchronize( 0 ) );
     for ( unsigned int i = 0 ; i < 256 ; ++i ) {
@@ -273,20 +346,40 @@ void huffman_encode(
 
     /* std::cerr << "code_map_size: " << code_map_size << "; " << std::endl; */
 
-    // TODO: generate output string of code words
-
     const dim3 block_size( 256, 1, 1 );
     const dim3 grid_size( ( input_size + block_size.x - 1 ) / block_size.x, 1, 1 );
+
+    unsigned int* d_output_positions;
+    const unsigned int output_positions_count = blelloch_size( input_size );
+    checkCudaErrors( cudaMalloc( &d_output_positions, sizeof( *d_output_positions ) * output_positions_count ) );
+
+    map_output_positions<<<grid_size, block_size, 0, 0>>>(
+        d_output_positions,
+        d_input,
+        input_size,
+        d_code_word_map );
+
+    blelloch_scan( d_output_positions, output_positions_count, 0 );
+
+    /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
+    /* for ( unsigned int i = 0 ; i < input_size ; ++i ) { */
+    /*     unsigned int tmp; */
+    /*     checkCudaErrors( cudaMemcpy( &tmp, &d_output_positions[i], sizeof( tmp ), cudaMemcpyDeviceToHost ) ); */
+    /*     std::cerr << "idx: " << i << "; " << tmp << std::endl; */
+    /* } */
+
     generate_output<<<grid_size, block_size, 0, 0>>>(
             d_output,
             d_input,
             input_size,
-            d_code_word_map );
+            d_code_word_map,
+            d_output_positions );
 
     // TODO: ensure that the new output size gets set
     // TODO: copy output buffer from device to host
     // TODO: must output the code word table as well
 
+    checkCudaErrors( cudaFree( d_output_positions ) );
     checkCudaErrors( cudaFree( d_code_word_map ) );
     checkCudaErrors( cudaFree( d_nodes ) );
 }

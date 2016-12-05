@@ -35,10 +35,9 @@ void parallel_huffman_encode(
 
     unsigned char* d_output;
     checkCudaErrors( cudaMalloc( &d_output, sizeof( *d_output ) * input_size ) );
+    checkCudaErrors( cudaMemsetAsync( d_output, input_size, 0, streams[1] ) );
 
-    unsigned int* d_output_size;
-    checkCudaErrors( cudaMalloc( &d_output_size, sizeof( *d_output_size ) ) );
-    checkCudaErrors( cudaMemsetAsync( d_output_size, 0, sizeof( *d_output_size ), streams[1] ) );
+    // TODO: use a device symbol for this?
 
     unsigned int* d_histogram;
     const unsigned int histogram_count = 1 << ( sizeof( *d_input ) << 3 );
@@ -46,16 +45,20 @@ void parallel_huffman_encode(
     checkCudaErrors( cudaMalloc( &d_histogram, histogram_size ) );
     checkCudaErrors( cudaMemsetAsync( d_histogram, 0, histogram_size, streams[2] ) );
 
+    unsigned int* d_output_size;
+    checkCudaErrors( cudaMalloc( &d_output_size, sizeof( *d_output_size ) ) );
+    checkCudaErrors( cudaMemsetAsync( d_output_size, 0, sizeof( *d_output_size ), streams[3] ) );
+
+    unsigned int* d_input_positions;
+    checkCudaErrors( cudaMalloc( &d_input_positions, histogram_size ) );
+    init_positions<<<1, histogram_count, 0, streams[4]>>>( d_input_positions );
+
     unsigned int* d_sorted_histogram;
     checkCudaErrors( cudaMalloc( &d_sorted_histogram, histogram_size ) );
 
     unsigned int* d_relative_offsets;
     const unsigned int radix_relative_offsets_count = blelloch_size( histogram_count ) * RADIX_SORT_NUM_VALS;
     checkCudaErrors( cudaMalloc( &d_relative_offsets, radix_relative_offsets_count * sizeof( *d_relative_offsets ) ) );
-
-    unsigned int* d_input_positions;
-    checkCudaErrors( cudaMalloc( &d_input_positions, histogram_size ) );
-    init_positions<<<1, histogram_count, 0, streams[3]>>>( d_input_positions );
 
     unsigned int* d_output_positions;
     checkCudaErrors( cudaMalloc( &d_output_positions, histogram_size ) );
@@ -87,6 +90,11 @@ void parallel_huffman_encode(
             streams[0] );
 
     checkCudaErrors( cudaDeviceSynchronize() );
+
+    checkCudaErrors( cudaFree( d_histogram ) );
+    checkCudaErrors( cudaFree( d_input_positions ) );
+    checkCudaErrors( cudaFree( d_radix_histogram ) );
+    checkCudaErrors( cudaFree( d_relative_offsets ) );
 
     /* std::cerr << "sorted histogram" << std::endl; */
     /* debug_print( d_sorted_histogram, histogram_count ); */
@@ -130,10 +138,6 @@ void parallel_huffman_encode(
     checkCudaErrors( cudaFree( d_input ) );
     checkCudaErrors( cudaFree( d_output ) );
     checkCudaErrors( cudaFree( d_output_size ) );
-    checkCudaErrors( cudaFree( d_histogram ) );
     checkCudaErrors( cudaFree( d_sorted_histogram ) );
-    checkCudaErrors( cudaFree( d_radix_histogram ) );
-    checkCudaErrors( cudaFree( d_relative_offsets ) );
-    checkCudaErrors( cudaFree( d_input_positions ) );
     checkCudaErrors( cudaFree( d_output_positions ) );
 }
