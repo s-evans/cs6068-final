@@ -167,7 +167,7 @@ __global__ void generate_code_words(
     const unsigned int direction = tid % 2;
     unsigned short stack[1024];
 
-    if ( nodes[tid].weight == 0 ) {
+    if ( !nodes[tid].weight || !nodes[tid + 1].weight ) {
         return;
     }
 
