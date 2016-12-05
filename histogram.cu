@@ -35,15 +35,14 @@ void histogram_kernel(
 }
 
 void histogram(
-        unsigned int* const d_histogram,
-        const unsigned int histogram_size,
-        const unsigned char* const d_input,
-        const unsigned int input_size,
-        cudaStream_t stream )
+        unsigned int* d_histogram,
+        unsigned int histogram_size,
+        unsigned char* d_input,
+        unsigned int input_size)
 {
     const dim3 block_size( histogram_size, 1, 1 );
     const dim3 grid_size( ( input_size + block_size.x - 1 ) / block_size.x, 1, 1 );
     const unsigned int shared_size = sizeof( *d_histogram ) * histogram_size;
 
-    histogram_kernel<<<grid_size, block_size, shared_size, stream>>>( d_histogram, d_input, input_size );
+    histogram_kernel<<<grid_size, block_size, shared_size, 0>>>( d_histogram, d_input, input_size );
 }

@@ -1,8 +1,14 @@
+#ifndef HUFFMAN_TREE_H
+#define HUFFMAN_TREE_H
+
+#include <thrust/device_vector.h>
 
 void huffman_encode(
-        unsigned char* const d_output, 
+        thrust::device_vector<unsigned char>& d_output, 
         unsigned int* const output_size,
-        unsigned char const* const d_input, 
-        unsigned int const input_size,
-        unsigned int const* const d_sorted_histogram,
-        unsigned int const* const d_sorted_symbols );
+        thrust::device_vector<unsigned char>& d_input, 
+        thrust::device_vector<unsigned int>& d_sorted_histogram,
+        thrust::device_vector<unsigned int>& d_sorted_symbols );
+
+
+#endif // HUFFMAN_TREE_H
