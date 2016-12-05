@@ -1,6 +1,7 @@
 #include "huffman_tree.h"
 #include "blelloch_scan.h"
 #include "utils.h"
+#include <stdio.h>
 
 #include <ostream>
 
@@ -261,26 +262,36 @@ __global__ void generate_output(
     }
 
     const unsigned int bit_offset = output_positions[tid];
-    const unsigned int word_offset = bit_offset / 32;
-
-    unsigned int* output_words = reinterpret_cast<unsigned int*>( output );
-    output_words += word_offset;
+    unsigned int* const output_words = reinterpret_cast<unsigned int*>( output );
 
     const unsigned int symbol = input[tid];
     const code_word_t* const code_word = &code_word_map[symbol];
     const unsigned int codeword_bits = code_word->size;
 
+    // TODO: not sure this is working quite yet
+
     for ( unsigned int i = 0 ; i < codeword_bits ; ++i ) {
-        const unsigned int bit = ( code_word->code[32 - i / 8 - 1] >> ( i % 8 ) ) & 1;
+
+        const unsigned int code_word_bit_position = codeword_bits - i - 1;
+        const unsigned int code_word_word_position = code_word_bit_position / 32;
+        const unsigned int code_word_word_bit_position = code_word_bit_position % 32;
+
+        const unsigned int bit = ( code_word->code[code_word_word_position] >> code_word_word_bit_position ) & 1;
 
         if ( !bit ) {
             continue;
         }
 
-        // TODO: figure out packing and shifting issues
+        const unsigned int current_bit_offset = bit_offset + i;
+        const unsigned int word_offset = current_bit_offset / 32;
+        const unsigned int word_bit_offset = current_bit_offset % 32;
+        const unsigned int word_byte_offset = word_bit_offset / 8;
+        const unsigned int word_byte_bit_offset = current_bit_offset % 8;
 
-        const unsigned int or_mask = bit << i;
-        atomicOr( output_words + i / 32, or_mask );
+        unsigned char stage[4] = {0};
+        stage[word_byte_offset] = bit << word_byte_bit_offset;
+
+        atomicOr( output_words + word_offset, *reinterpret_cast<unsigned int*>( &stage ) );
     }
 }
 
@@ -294,6 +305,7 @@ void huffman_encode(
 {
     const unsigned int histogram_size = 256;
 
+    // TODO: refactor a bit
     // TODO: rename file
 
     code_word_t* d_code_word_map;
@@ -328,21 +340,21 @@ void huffman_encode(
 
     insert_super_nodes<<< 1, max_node_count, 0, 0>>>( d_nodes );
 
-    checkCudaErrors( cudaStreamSynchronize( 0 ) );
-    for ( unsigned int i = 0 ; i < max_node_count ; ++i ) {
-        node_t tmp;
-        checkCudaErrors( cudaMemcpy( &tmp, &d_nodes[i], sizeof( tmp ), cudaMemcpyDeviceToHost ) );
-        std::cerr << "idx: " << i << "; " << tmp << std::endl;
-    }
+    /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
+    /* for ( unsigned int i = 0 ; i < max_node_count ; ++i ) { */
+    /*     node_t tmp; */
+    /*     checkCudaErrors( cudaMemcpy( &tmp, &d_nodes[i], sizeof( tmp ), cudaMemcpyDeviceToHost ) ); */
+    /*     std::cerr << "idx: " << i << "; " << tmp << std::endl; */
+    /* } */
 
     generate_code_words<<< 1, max_node_count, 0, 0>>>( d_code_word_map, d_nodes );
 
-    checkCudaErrors( cudaStreamSynchronize( 0 ) );
-    for ( unsigned int i = 0 ; i < 256 ; ++i ) {
-        code_word_t tmp;
-        checkCudaErrors( cudaMemcpy( &tmp, &d_code_word_map[i], sizeof( tmp ), cudaMemcpyDeviceToHost ) );
-        std::cerr << "idx: " << i << "; " << tmp << std::endl;
-    }
+    /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
+    /* for ( unsigned int i = 0 ; i < 256 ; ++i ) { */
+    /*     code_word_t tmp; */
+    /*     checkCudaErrors( cudaMemcpy( &tmp, &d_code_word_map[i], sizeof( tmp ), cudaMemcpyDeviceToHost ) ); */
+    /*     std::cerr << "idx: " << i << "; " << tmp << std::endl; */
+    /* } */
 
     /* std::cerr << "code_map_size: " << code_map_size << "; " << std::endl; */
 
@@ -362,7 +374,7 @@ void huffman_encode(
     blelloch_scan( d_output_positions, output_positions_count, 0 );
 
     /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
-    /* for ( unsigned int i = 0 ; i < input_size ; ++i ) { */
+    /* for ( unsigned int i = 0 ; i < output_positions_count ; ++i ) { */
     /*     unsigned int tmp; */
     /*     checkCudaErrors( cudaMemcpy( &tmp, &d_output_positions[i], sizeof( tmp ), cudaMemcpyDeviceToHost ) ); */
     /*     std::cerr << "idx: " << i << "; " << tmp << std::endl; */
@@ -375,8 +387,19 @@ void huffman_encode(
             d_code_word_map,
             d_output_positions );
 
-    // TODO: ensure that the new output size gets set
-    // TODO: copy output buffer from device to host
+    // TODO: may barf if file is a multiple of 2
+    checkCudaErrors( cudaMemcpy( output_size, d_output_positions + input_size, sizeof( *output_size ), cudaMemcpyDeviceToHost ) );
+    *output_size = ( *output_size + 8 - 1 ) / 8;
+
+    /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
+    /* for ( unsigned int i = 0 ; i < *output_size ; i += 16 ) { */
+    /*     unsigned char tmp[16] = {0}; */
+    /*     const unsigned int remain = input_size - i; */
+    /*     checkCudaErrors( cudaMemcpy( &tmp, &d_output[i], ( remain / 16 ? 16 : remain ), cudaMemcpyDeviceToHost ) ); */
+    /*     fprintf( stderr, "%08x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n", */ 
+    /*                 i, tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], tmp[6], tmp[7], tmp[8], tmp[9], tmp[10], tmp[11], tmp[12], tmp[13], tmp[14], tmp[15] ); */
+    /* } */
+
     // TODO: must output the code word table as well
 
     checkCudaErrors( cudaFree( d_output_positions ) );

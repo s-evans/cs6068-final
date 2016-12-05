@@ -37,21 +37,15 @@ void parallel_huffman_encode(
     checkCudaErrors( cudaMalloc( &d_output, sizeof( *d_output ) * input_size ) );
     checkCudaErrors( cudaMemsetAsync( d_output, input_size, 0, streams[1] ) );
 
-    // TODO: use a device symbol for this?
-
     unsigned int* d_histogram;
     const unsigned int histogram_count = 1 << ( sizeof( *d_input ) << 3 );
     const unsigned int histogram_size = sizeof( *d_histogram ) << ( sizeof( *d_input ) << 3 );
     checkCudaErrors( cudaMalloc( &d_histogram, histogram_size ) );
     checkCudaErrors( cudaMemsetAsync( d_histogram, 0, histogram_size, streams[2] ) );
 
-    unsigned int* d_output_size;
-    checkCudaErrors( cudaMalloc( &d_output_size, sizeof( *d_output_size ) ) );
-    checkCudaErrors( cudaMemsetAsync( d_output_size, 0, sizeof( *d_output_size ), streams[3] ) );
-
     unsigned int* d_input_positions;
     checkCudaErrors( cudaMalloc( &d_input_positions, histogram_size ) );
-    init_positions<<<1, histogram_count, 0, streams[4]>>>( d_input_positions );
+    init_positions<<<1, histogram_count, 0, streams[3]>>>( d_input_positions );
 
     unsigned int* d_sorted_histogram;
     checkCudaErrors( cudaMalloc( &d_sorted_histogram, histogram_size ) );
@@ -110,34 +104,19 @@ void parallel_huffman_encode(
             d_sorted_histogram,
             d_output_positions );
 
-    // TODO: map input symbols to output symbols and compact
-
     // TODO: output the huffman table along with output data
-
-    // TODO: update reduce input size to actual compressed size
-
-#if 0 
-    checkCudaErrors( cudaMemcpy( &output_size, d_output_size, sizeof( *d_output_size ), cudaMemcpyDeviceToHost ) );
-#else
-    output_size = input_size;
-#endif
-
-    // TODO: change d_input to whatever buffer ends up being used
 
     checkCudaErrors( cudaHostUnregister( static_cast<void*>( const_cast<unsigned char*>( h_input_buffer ) ) ) );
     checkCudaErrors( cudaHostRegister( static_cast<void*>( h_output_buffer ), output_size, cudaHostRegisterMapped ) );
 
-    checkCudaErrors( cudaMemcpyAsync( h_output_buffer, d_input, output_size, cudaMemcpyDeviceToHost, streams[0] ) );
+    checkCudaErrors( cudaMemcpyAsync( h_output_buffer, d_output, output_size, cudaMemcpyDeviceToHost, streams[0] ) );
 
     checkCudaErrors( cudaDeviceSynchronize() );
 
     checkCudaErrors( cudaHostUnregister( static_cast<void*>( h_output_buffer ) ) );
 
-    // TODO: release any additional memory allocated
-
     checkCudaErrors( cudaFree( d_input ) );
     checkCudaErrors( cudaFree( d_output ) );
-    checkCudaErrors( cudaFree( d_output_size ) );
     checkCudaErrors( cudaFree( d_sorted_histogram ) );
     checkCudaErrors( cudaFree( d_output_positions ) );
 }

@@ -144,5 +144,9 @@ int main( int argc, char** argv )
     output_file.close();
     input_file.close();
 
+    if ( truncate( output_file_path.string().c_str(), output_file_size ) ) {
+        std::cerr << "Failed to flush output data: " << strerror( errno ) << std::endl;
+    }
+
     return err;
 }
