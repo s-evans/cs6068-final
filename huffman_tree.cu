@@ -61,42 +61,6 @@ std::ostream& operator<< ( std::ostream& stream, code_word_t const& code_word )
 {
     stream << "; code_word.size: "  << static_cast<unsigned int>( code_word.size ) << "; code word: ";
 
-    /* stream << std::hex << std::setw(2) << std::setfill( '0' ) */ 
-    /*     << static_cast<unsigned int>( code_word.code[0] ) */
-    /*     << static_cast<unsigned int>( code_word.code[1] ) */
-    /*     << static_cast<unsigned int>( code_word.code[2] ) */
-    /*     << static_cast<unsigned int>( code_word.code[3] ) */
-    /*     << static_cast<unsigned int>( code_word.code[4] ) */
-    /*     << static_cast<unsigned int>( code_word.code[5] ) */
-    /*     << static_cast<unsigned int>( code_word.code[6] ) */
-    /*     << static_cast<unsigned int>( code_word.code[7] ) */
-    /*     << static_cast<unsigned int>( code_word.code[8] ) */
-    /*     << static_cast<unsigned int>( code_word.code[9] ) */
-    /*     << static_cast<unsigned int>( code_word.code[10] ) */
-    /*     << static_cast<unsigned int>( code_word.code[11] ) */
-    /*     << static_cast<unsigned int>( code_word.code[12] ) */
-    /*     << static_cast<unsigned int>( code_word.code[13] ) */
-    /*     << static_cast<unsigned int>( code_word.code[14] ) */
-    /*     << static_cast<unsigned int>( code_word.code[15] ) */
-    /*     << static_cast<unsigned int>( code_word.code[16] ) */
-    /*     << static_cast<unsigned int>( code_word.code[17] ) */
-    /*     << static_cast<unsigned int>( code_word.code[18] ) */
-    /*     << static_cast<unsigned int>( code_word.code[19] ) */
-    /*     << static_cast<unsigned int>( code_word.code[20] ) */
-    /*     << static_cast<unsigned int>( code_word.code[21] ) */
-    /*     << static_cast<unsigned int>( code_word.code[22] ) */
-    /*     << static_cast<unsigned int>( code_word.code[23] ) */
-    /*     << static_cast<unsigned int>( code_word.code[24] ) */
-    /*     << static_cast<unsigned int>( code_word.code[25] ) */
-    /*     << static_cast<unsigned int>( code_word.code[26] ) */
-    /*     << static_cast<unsigned int>( code_word.code[27] ) */
-    /*     << static_cast<unsigned int>( code_word.code[28] ) */
-    /*     << static_cast<unsigned int>( code_word.code[29] ) */
-    /*     << static_cast<unsigned int>( code_word.code[30] ) */
-    /*     << static_cast<unsigned int>( code_word.code[31] ) */
-    /*     << std::dec << std::setw(0) << std::setfill( ' ' ) */
-    /*     << "; code word: "; */
-
     for ( int i = code_word.size - 1 ; i >= 0 ; --i ) {
         stream << static_cast<bool>( ( code_word.code[i / 32] >> ( i % 32 ) ) & 1 );
     }
@@ -327,30 +291,9 @@ void huffman_encode(
         thrust::raw_pointer_cast( &d_nodes[0] ),
         node_count );
 
-    /* std::cerr << "node_count: " << node_count << std::endl; */
-    /* std::cerr << "max_node_count: " << max_node_count << std::endl; */
-
     insert_super_nodes<<< 1, max_node_count, 0, 0>>>( thrust::raw_pointer_cast( &d_nodes[0] ) );
 
-    /* std::cerr << std::endl << "tree" << std::endl; */
-    /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
-    /* for ( unsigned int i = 0 ; i < max_node_count ; ++i ) { */
-    /*     node_t tmp; */
-    /*     checkCudaErrors( cudaMemcpy( &tmp, thrust::raw_pointer_cast( &d_nodes[i] ), sizeof( tmp ), cudaMemcpyDeviceToHost ) ); */
-    /*     std::cerr << "idx: " << i << "; " << tmp << std::endl; */
-    /* } */
-
     generate_code_words<<< 1, max_node_count, 0, 0>>>( thrust::raw_pointer_cast( &d_code_word_map[0] ), thrust::raw_pointer_cast( &d_nodes[0] ) );
-
-    /* std::cerr << std::endl << "code words" << std::endl; */
-    /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
-    /* for ( unsigned int i = 0 ; i < 256 ; ++i ) { */
-    /*     code_word_t tmp; */
-    /*     checkCudaErrors( cudaMemcpy( &tmp, thrust::raw_pointer_cast( &d_code_word_map[i] ), sizeof( tmp ), cudaMemcpyDeviceToHost ) ); */
-    /*     std::cerr << "idx: " << i << "; " << tmp << std::endl; */
-    /* } */
-
-    /* std::cerr << "code_map_size: " << code_map_size << "; " << std::endl; */
 
     const dim3 block_size( 256, 1, 1 );
     const dim3 grid_size( ( input_size + block_size.x - 1 ) / block_size.x, 1, 1 );
@@ -366,16 +309,6 @@ void huffman_encode(
 
     thrust::exclusive_scan( d_output_positions.begin(), d_output_positions.end(), d_output_positions.begin() );
 
-    /* std::cerr << std::endl << "output positions" << std::endl; */
-    /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
-    /* for ( unsigned int i = 0 ; i < output_positions_count ; ++i ) { */
-    /*     unsigned int tmp; */
-    /*     checkCudaErrors( cudaMemcpy( &tmp, thrust::raw_pointer_cast( &d_output_positions[i] ), sizeof( tmp ), cudaMemcpyDeviceToHost ) ); */
-    /*     std::cerr << "idx: " << i << "; " << tmp << std::endl; */
-    /* } */
-
-    // TODO: output the code word table size and table
-
     generate_output<<<grid_size, block_size, 0, 0>>>(
             thrust::raw_pointer_cast( &d_output[0] ),
             thrust::raw_pointer_cast( &d_input[0] ),
@@ -385,14 +318,4 @@ void huffman_encode(
 
     checkCudaErrors( cudaMemcpy( output_size, thrust::raw_pointer_cast( &d_output_positions[0] ) + input_size, sizeof( *output_size ), cudaMemcpyDeviceToHost ) );
     *output_size = ( *output_size + 8 - 1 ) / 8;
-
-    /* std::cerr << std::endl << "output file" << std::endl; */
-    /* checkCudaErrors( cudaStreamSynchronize( 0 ) ); */
-    /* for ( unsigned int i = 0 ; i < *output_size ; i += 16 ) { */
-    /*     unsigned char tmp[16] = {0}; */
-    /*     const unsigned int remain = *output_size - i; */
-    /*     checkCudaErrors( cudaMemcpy( &tmp, thrust::raw_pointer_cast( &d_output[i] ), ( remain / 16 ? 16 : remain ), cudaMemcpyDeviceToHost ) ); */
-    /*     fprintf( stderr, "%08x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n", */ 
-    /*                 i, tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5], tmp[6], tmp[7], tmp[8], tmp[9], tmp[10], tmp[11], tmp[12], tmp[13], tmp[14], tmp[15] ); */
-    /* } */
 }

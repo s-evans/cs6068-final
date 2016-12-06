@@ -3,7 +3,6 @@
 #include "boost/iostreams/device/mapped_file.hpp"
 #include "boost/program_options.hpp"
 #include "parallel_huffman.h"
-#include "serial_huffman.h"
 #include "timer.h"
 #include "utils.h"
 #include <assert.h>
@@ -22,10 +21,6 @@ typedef enum _options_status_t {
 int main( int argc, char** argv )
 {
     // Declare the supported options.
-    boost::program_options::options_description implementations( "Implementation options" );
-    implementations.add_options()
-    ( "serial,s", "choose serial implementation" )
-    ( "parallel,p", "choose parallel implementation" );
 
     boost::program_options::options_description options( "Other options" );
     options.add_options()
@@ -41,7 +36,7 @@ int main( int argc, char** argv )
     ( "output-file,o", boost::program_options::value<boost::filesystem::path>( &output_file_path ), "path to output file" );
 
     boost::program_options::options_description desc( "Usage" );
-    desc.add( implementations ).add( options ).add( input_output );
+    desc.add( options ).add( input_output );
 
     boost::program_options::positional_options_description positional;
     positional.add( "input-file", 1 ).add( "output-file", 1 );
@@ -93,7 +88,7 @@ int main( int argc, char** argv )
         return err;
     }
 
-    boost::iostreams::mapped_file input_file( input_file_path );
+    boost::iostreams::mapped_file_source input_file( input_file_path );
 
     if ( !input_file.is_open() ) {
         std::cerr << "Failed to open input file " << input_file_path << std::endl;
@@ -115,21 +110,13 @@ int main( int argc, char** argv )
 
     GpuTimer timer;
 
-    /* std::cerr << "input_file.size(): " << input_file.size() << std::endl; */
+    timer.Start();
 
-    if ( vm.count( "serial" ) ) {
-        timer.Start();
-        serial_huffman_encode(
-                reinterpret_cast<unsigned char*>( input_file.data() ), input_file.size(),
-                reinterpret_cast<unsigned char*>( output_file.data() ), output_file_size );
-        timer.Stop();
-    } else {
-        timer.Start();
-        parallel_huffman_encode(
-                reinterpret_cast<unsigned char*>( input_file.data() ), input_file.size(),
-                reinterpret_cast<unsigned char*>( output_file.data() ), output_file_size );
-        timer.Stop();
-    }
+    parallel_huffman_encode(
+            reinterpret_cast<const unsigned char*>( input_file.data() ), input_file.size(),
+            reinterpret_cast<unsigned char*>( output_file.data() ), output_file_size );
+
+    timer.Stop();
 
     if ( vm.count( "timing" ) ) {
         std::cerr << "Code ran in " << timer.Elapsed() << " msecs" << std::endl;

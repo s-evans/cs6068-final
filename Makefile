@@ -8,12 +8,9 @@ GCC_OPTS=-O3 -m64
 
 CUDA_INCLUDEPATH=/usr/local/cuda/6.5.14/include
 
-SOURCES=main.cpp \
-	serial_huffman.cpp\
-	debug_print.cpp
+SOURCES=main.cpp
 
 CUDA_SOURCES=parallel_huffman.cu\
-			 histogram.cu\
 			 huffman_tree.cu
 
 OBJECTS=$(SOURCES:.cpp=.o)
