@@ -259,11 +259,19 @@ __global__ void generate_output(
         return;
     }
 
+    __shared__ code_word_t s_code_word_map[256];
+
+    if ( threadIdx.x < 256 ) { 
+        s_code_word_map[threadIdx.x] = code_word_map[threadIdx.x];
+    }
+
+    __syncthreads();
+
     const unsigned int bit_offset = output_positions[tid];
     unsigned int* const output_words = reinterpret_cast<unsigned int*>( output );
 
     const unsigned int symbol = input[tid];
-    const code_word_t* const code_word = &code_word_map[symbol];
+    const code_word_t* const code_word = &s_code_word_map[symbol];
     const unsigned int codeword_bits = code_word->size;
 
     unsigned char stage[4] = {0};
