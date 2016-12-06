@@ -192,8 +192,6 @@ __global__ void generate_code_words(
     code_word_t* const code_word_map,
     const node_t* const nodes )
 {
-    // TODO: use shared memory?
-
     const unsigned int tid = threadIdx.x;
     const unsigned int direction = tid % 2;
     unsigned short stack[2 * ( 511 + 1 )];
@@ -201,6 +199,10 @@ __global__ void generate_code_words(
     if ( !nodes[tid].weight || !nodes[tid + 1].weight ) {
         return;
     }
+
+    __shared__ node_t s_nodes[512];
+    s_nodes[tid] = nodes[tid];
+    __syncthreads();
 
     init( stack );
     push( stack, tid, 0 );
@@ -212,14 +214,14 @@ __global__ void generate_code_words(
 
         pop( stack, &idx, &bit_offset );
 
-        if ( nodes[idx].left_idx == UCHAR_MAX ) {
-            const unsigned char symbol = nodes[idx].symbol;
+        if ( s_nodes[idx].left_idx == UCHAR_MAX ) {
+            const unsigned char symbol = s_nodes[idx].symbol;
             atomicOr( &code_word_map[symbol].code[ bit_offset / 32 ], direction << ( bit_offset % 32 ) );
             atomicAdd( &code_word_map[symbol].size, 1 );
             continue;
         }
 
-        idx = nodes[idx].left_idx * 2;
+        idx = s_nodes[idx].left_idx * 2;
         ++bit_offset;
 
         push( stack, idx, bit_offset );
@@ -298,9 +300,6 @@ void huffman_encode(
 {
     const unsigned int input_size = d_input.size();
 
-    // TODO: refactor a bit
-    // TODO: rename file
-
     thrust::device_vector<code_word_t> d_code_word_map( d_sorted_histogram.size() );
     checkCudaErrors( cudaMemsetAsync(
                 thrust::raw_pointer_cast( &d_code_word_map[0] ),
@@ -348,7 +347,7 @@ void huffman_encode(
     const dim3 block_size( 256, 1, 1 );
     const dim3 grid_size( ( input_size + block_size.x - 1 ) / block_size.x, 1, 1 );
 
-    const unsigned int output_positions_count = blelloch_size( input_size );
+    const unsigned int output_positions_count = input_size + 1;
     thrust::device_vector<unsigned int> d_output_positions( output_positions_count );
 
     map_output_positions<<<grid_size, block_size, 0, 0>>>(
@@ -376,7 +375,6 @@ void huffman_encode(
             thrust::raw_pointer_cast( &d_code_word_map[0] ),
             thrust::raw_pointer_cast( &d_output_positions[0] ) );
 
-    // TODO: may barf if file size is a multiple/power of 2
     checkCudaErrors( cudaMemcpy( output_size, thrust::raw_pointer_cast( &d_output_positions[0] ) + input_size, sizeof( *output_size ), cudaMemcpyDeviceToHost ) );
     *output_size = ( *output_size + 8 - 1 ) / 8;
 
